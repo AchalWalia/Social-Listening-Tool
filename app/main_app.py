@@ -170,6 +170,39 @@ with st.sidebar:
         elif submitted:
             st.error("Please enter at least one app store identifier")
 
+    # THIRD OPTION: Standalone Google Search Analytics
+    st.markdown("---")
+    st.markdown("### 🔎 **Run Google Search Analytics** (Standalone)")
+    st.markdown("**Analyze Google search interest for any keyword:**")
+    
+    with st.form("google_search_analysis"):
+        trends_keyword = st.text_input(
+            "Keyword to analyze",
+            placeholder="e.g., POP Club, Spotify, food delivery",
+            help="Enter a brand, product, or topic keyword"
+        )
+        timeframe = st.selectbox(
+            "Timeframe",
+            ["today 12-m", "today 3-m", "today 5-y", "all"],
+            index=0,
+            help="Select the Google Trends timeframe"
+        )
+        run_trends = st.form_submit_button("📈 **RUN GOOGLE SEARCH ANALYSIS**", type="secondary")
+        if run_trends:
+            if not trends_keyword.strip():
+                st.error("Please enter a keyword to analyze")
+            else:
+                try:
+                    with st.spinner("Fetching Google Trends data..."):
+                        trends_data = harvest_google_trends(trends_keyword.strip(), timeframe=timeframe)
+                        # Persist in session for rendering on the main panel
+                        st.session_state["trends_keyword"] = trends_keyword.strip()
+                        st.session_state["trends_timeframe"] = timeframe
+                        st.session_state["trends_data"] = trends_data
+                        st.success("✅ Google search analysis complete. See results in the main panel below.")
+                except Exception as e:
+                    st.error(f"❌ Google Trends error: {e}")
+
 # Continue with data collection if we have a selected company
 if selected_company:
     st.success(f"Selected: **{selected_company.name}**")
@@ -283,17 +316,14 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
     
     st.info(f"📊 Dashboard for: **{selected_company.name}** | Found **{len(df)}** mentions")
     
-    # Get Google Trends data for dashboard (with error handling)
-    try:
-        trends_data = harvest_google_trends(selected_company.name)
-        search_volume_summary = get_search_volume_summary(trends_data)
-    except Exception as e:
-        trends_data = {'status': 'error'}
-        search_volume_summary = {
-            'avg_search_volume': 0,
-            'peak_search_volume': 0,
-            'trend_direction': 'N/A'
-        }
+    # Do not auto-run Google Trends here; only show if user ran it
+    trends_data = st.session_state.get('trends_data')
+    search_volume_summary = None
+    if trends_data:
+        try:
+            search_volume_summary = get_search_volume_summary(trends_data)
+        except Exception:
+            search_volume_summary = None
     
     # Show dashboard based on data availability
     if len(df) == 0:
@@ -325,7 +355,7 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
         else:
             df_display = df
         
-        # Render metrics (now includes search volume, collected review counts, and store totals)
+        # Render metrics (search volume shown only if available from standalone run)
         render_metrics(df_display, ratings_summary, search_volume_summary, review_counts, store_totals)
         
         # Render themes analysis
@@ -369,3 +399,31 @@ else:
         - Spotify app on both app stores with correct package IDs
         - Ready for immediate review analysis!
         """) 
+
+# Standalone Google Trends results section (always visible if session has data)
+if st.session_state.get("trends_data"):
+    td = st.session_state["trends_data"]
+    st.markdown("---")
+    st.header("📈 Google Search Analytics")
+    st.info(f"Keyword: **{st.session_state.get('trends_keyword', td.get('company_name',''))}** | Timeframe: **{st.session_state.get('trends_timeframe', td.get('timeframe',''))}**")
+    summary = get_search_volume_summary(td)
+    colA, colB, colC, colD = st.columns(4)
+    with colA:
+        st.metric("Avg Interest", summary.get('avg_search_volume', 0))
+    with colB:
+        st.metric("Peak Interest", summary.get('peak_search_volume', 0))
+    with colC:
+        st.metric("Data Points", summary.get('data_points', 0))
+    with colD:
+        st.metric("Trend", summary.get('trend_direction', 'N/A'))
+
+    # Show related queries and top regions
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**🔍 Top Related Queries**")
+        for q in summary.get('related_queries', [])[:5]:
+            st.markdown(f"• {q}")
+    with c2:
+        st.markdown("**🌍 Top Regions**")
+        for region, score in list(summary.get('top_regions', {}).items())[:10]:
+            st.markdown(f"• {region}: {score}/100")
