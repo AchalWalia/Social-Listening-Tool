@@ -193,8 +193,8 @@ with st.sidebar:
                 st.error("Please enter a keyword to analyze")
             else:
                 try:
-                    with st.spinner("Fetching Google Trends data..."):
-                        trends_data = harvest_google_trends(trends_keyword.strip(), timeframe=timeframe)
+                    with st.spinner("Fetching Google Trends data (India)..."):
+                        trends_data = harvest_google_trends(trends_keyword.strip(), timeframe=timeframe, geo="IN")
                         # Persist in session for rendering on the main panel
                         st.session_state["trends_keyword"] = trends_keyword.strip()
                         st.session_state["trends_timeframe"] = timeframe
@@ -424,6 +424,7 @@ if st.session_state.get("trends_data"):
         for q in summary.get('related_queries', [])[:5]:
             st.markdown(f"• {q}")
     with c2:
-        st.markdown("**🌍 Top Regions**")
+        label = "**🌍 Top States (India)**" if td.get('geo') == 'IN' else "**🌍 Top Regions**"
+        st.markdown(label)
         for region, score in list(summary.get('top_regions', {}).items())[:10]:
             st.markdown(f"• {region}: {score}/100")

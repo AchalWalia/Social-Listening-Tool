@@ -9,7 +9,7 @@ import streamlit as st
 from pytrends.request import TrendReq
 
 
-def harvest_google_trends(company_name: str, timeframe: str = "today 12-m") -> Dict[str, any]:
+def harvest_google_trends(company_name: str, timeframe: str = "today 12-m", geo: str = "IN") -> Dict[str, any]:
     """
     Harvest Google Trends data for a company.
     
@@ -32,7 +32,8 @@ def harvest_google_trends(company_name: str, timeframe: str = "today 12-m") -> D
         
         # Build payload for the company name
         kw_list = [company_name]
-        pytrends.build_payload(kw_list, cat=0, timeframe=timeframe, geo='', gprop='')
+        # Limit geography to India by default (geo='IN')
+        pytrends.build_payload(kw_list, cat=0, timeframe=timeframe, geo=geo or '', gprop='')
         
         # Get interest over time
         interest_over_time_df = pytrends.interest_over_time()
@@ -56,12 +57,19 @@ def harvest_google_trends(company_name: str, timeframe: str = "today 12-m") -> D
                     'search_volume': int(value)
                 })
         
-        # Get regional interest (top countries/regions)
+        # Get regional interest (top states within India when geo='IN')
         regional_interest = {}
         try:
-            regional_data = pytrends.interest_by_region(resolution='COUNTRY', inc_low_vol=True, inc_geo_code=False)
+            # If geo is India, fetch by states (REGION). Otherwise default to COUNTRY.
+            resolution = 'REGION' if (geo or '').upper() == 'IN' else 'COUNTRY'
+            regional_data = pytrends.interest_by_region(
+                resolution=resolution,
+                inc_low_vol=True,
+                inc_geo_code=False,
+                geo=geo or ''
+            )
             if not regional_data.empty and company_name in regional_data.columns:
-                # Get top 10 countries
+                # Get top 10 regions
                 top_regions = regional_data[company_name].sort_values(ascending=False).head(10)
                 regional_interest = {
                     region: int(value) for region, value in top_regions.items() if value > 0
@@ -128,7 +136,8 @@ def harvest_google_trends(company_name: str, timeframe: str = "today 12-m") -> D
             'regional_interest': regional_interest,
             'suggestions': suggestions,
             'total_data_points': len(search_volume_data),
-            'status': 'success'
+            'status': 'success',
+            'geo': (geo or '').upper()
         }
         
     except Exception as e:
