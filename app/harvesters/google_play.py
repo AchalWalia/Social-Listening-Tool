@@ -9,9 +9,9 @@ from google_play_scraper import app as gp_app, reviews as gp_reviews, search, So
 from app.db.database import insert_mentions, upsert_app_profile
 from app.harvesters.app_mapping import app_mapping_service
 
-# Prefer global coverage for details/review counts
-# Try multiple key stores to improve accuracy of ratings and review totals
-DEFAULT_COUNTRIES: List[str] = ["us", "ae", "in", "gb", "sa", "kw"]
+# Prefer India first for rating accuracy on dashboard, while still scanning
+# other key stores to maximize ratings_count consistency.
+DEFAULT_COUNTRIES: List[str] = ["in", "us", "gb", "ae", "sa", "kw"]
 
 
 def _run_with_timeout(target, args: Tuple, kwargs: Dict, timeout_seconds: int):
@@ -136,9 +136,10 @@ def _fetch_reviews_limited(app_id: str, count: int = 200, timeout_seconds: int =
 
 
 def _fetch_app_details(app_id: str, timeout_seconds: int = 15) -> Optional[Dict]:
-    """Fetch app details and prefer the highest ratings_count across regions."""
+    """Fetch app details preferring IN rating; keep max ratings_count across regions."""
     best: Optional[Dict] = None
     best_count: int = -1
+    in_rating: Optional[float] = None
     for country in DEFAULT_COUNTRIES:
         value, _ = _run_with_timeout(
             gp_app,
@@ -149,7 +150,9 @@ def _fetch_app_details(app_id: str, timeout_seconds: int = 15) -> Optional[Dict]
         if not value:
             continue
         rating = float(value.get("score", 0)) if value.get("score") else None
-        ratings_count_raw = value.get("reviews", 0)
+        # Google Play shows "reviews" on the store UI but the API exposes total count as 'ratings'.
+        # Prefer 'ratings' and fall back to 'reviews' if unavailable.
+        ratings_count_raw = value.get("ratings", value.get("reviews", 0))
         try:
             ratings_count = int(ratings_count_raw or 0)
         except Exception:
@@ -160,9 +163,14 @@ def _fetch_app_details(app_id: str, timeout_seconds: int = 15) -> Optional[Dict]
             "ratings_count": ratings_count,
             "url": f"https://play.google.com/store/apps/details?id={app_id}",
         }
+        # Record India rating when available to override later
+        if country == "in" and rating is not None:
+            in_rating = rating
         if ratings_count > best_count:
             best = details
             best_count = ratings_count
+    if best and in_rating is not None:
+        best["rating"] = in_rating
     return best
 
 

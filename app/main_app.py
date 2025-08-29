@@ -21,6 +21,7 @@ from app.db.database import (
     get_platform_rating_summary,
     get_platform_store_review_totals,
     get_platform_review_counts,
+    get_platform_summary_for_app_ids,
 )
 from app.harvesters.apple_app_store import harvest_apple_app_store
 from app.harvesters.google_play import harvest_google_play
@@ -313,6 +314,24 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
     ratings_summary = get_platform_rating_summary(connection, company_id)
     review_counts = get_platform_review_counts(connection, company_id)
     store_totals = get_platform_store_review_totals(connection, company_id)
+
+    # If user provided specific IDs this session, compute per-app summaries to override platform aggregates
+    selected_gp_ids = []
+    selected_as_ids = []
+    if 'app_store_ids' in locals() and app_store_ids:
+        if app_store_ids.get('google_play_package'):
+            selected_gp_ids = [app_store_ids['google_play_package']]
+        if app_store_ids.get('apple_app_id'):
+            selected_as_ids = [app_store_ids['apple_app_id']]
+
+    if selected_gp_ids:
+        gp_summary = get_platform_summary_for_app_ids(connection, company_id, 'Google Play', selected_gp_ids)
+        ratings_summary['Google Play'] = gp_summary
+        store_totals['Google Play'] = gp_summary.get('ratings_count', 0)
+    if selected_as_ids:
+        as_summary = get_platform_summary_for_app_ids(connection, company_id, 'Apple App Store', selected_as_ids)
+        ratings_summary['Apple App Store'] = as_summary
+        store_totals['Apple App Store'] = as_summary.get('ratings_count', 0)
     
     st.info(f"📊 Dashboard for: **{selected_company.name}** | Found **{len(df)}** mentions")
     

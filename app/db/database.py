@@ -238,6 +238,58 @@ def get_platform_review_counts(connection: sqlite3.Connection, company_id: int) 
     return review_counts
 
 
+def get_platform_summary_for_app_ids(
+    connection: sqlite3.Connection,
+    company_id: int,
+    platform: str,
+    app_ids: List[str],
+) -> Dict[str, float]:
+    """Compute rating summary limited to specific app_ids for a platform.
+
+    Returns a dict with keys: avg_rating, ratings_count, apps.
+    Weighted average is used when ratings_count is available, otherwise a simple mean.
+    """
+    if not app_ids:
+        return {"avg_rating": 0.0, "ratings_count": 0, "apps": 0}
+
+    placeholders = ",".join(["?"] * len(app_ids))
+    cursor = connection.cursor()
+    cursor.execute(
+        f"""
+        SELECT rating, ratings_count
+        FROM app_profiles
+        WHERE company_id = ? AND platform = ? AND app_id IN ({placeholders})
+        """,
+        (company_id, platform, *app_ids),
+    )
+
+    rows = cursor.fetchall()
+    if not rows:
+        return {"avg_rating": 0.0, "ratings_count": 0, "apps": 0}
+
+    weighted_sum = 0.0
+    total_count = 0
+    simple_sum = 0.0
+    simple_n = 0
+    for r in rows:
+        rating = r[0]
+        count = r[1] or 0
+        if rating is None:
+            continue
+        simple_sum += float(rating)
+        simple_n += 1
+        if count:
+            weighted_sum += float(rating) * int(count)
+            total_count += int(count)
+
+    if total_count > 0:
+        avg = weighted_sum / total_count
+    else:
+        avg = (simple_sum / simple_n) if simple_n > 0 else 0.0
+
+    return {"avg_rating": round(avg, 2), "ratings_count": total_count, "apps": len(rows)}
+
+
 def fetch_mentions_dataframe(connection: sqlite3.Connection, company_id: int, source: Optional[str] = None):
     import pandas as pd  # local import to avoid global dependency at import time
 
