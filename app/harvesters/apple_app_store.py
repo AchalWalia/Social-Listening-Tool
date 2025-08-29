@@ -113,59 +113,70 @@ def harvest_apple_app_store(connection, company_id: int, company_name: str, app_
         # Fetch app details for each provided ID
         for app_id in app_ids:
             try:
-                app_data = None
-                # Try multiple regions to find the app
-                regions = ['us', 'in', 'gb']  # US, India, UK
-                
+                best_data = None
+                best_count = -1
+                # Try multiple regions and keep the one with highest rating count
+                regions = ['us', 'in', 'gb', 'ae', 'sa', 'kw']  # broaden coverage
+
                 for region in regions:
                     try:
                         resp = requests.get(
                             "https://itunes.apple.com/lookup",
                             params={"id": app_id, "country": region},
-                            timeout=15
+                            timeout=15,
                         )
                         resp.raise_for_status()
                         data = resp.json()
                         results = data.get("results", [])
-                        
-                        if results:
-                            app_data = results[0]
-                            country_name = {"us": "US", "in": "India", "gb": "UK"}.get(region, region.upper())
-                            print(f"✅ Found app: {app_data.get('trackName')} by {app_data.get('artistName')} (Available in {country_name})")
-                            break
+                        if not results:
+                            continue
+                        candidate = results[0]
+                        # Prefer total rating counts; fall back to current version fields
+                        avg = candidate.get("averageUserRating") or candidate.get("averageUserRatingForCurrentVersion")
+                        cnt = candidate.get("userRatingCount") or candidate.get("userRatingCountForCurrentVersion") or 0
+                        try:
+                            cnt_int = int(cnt)
+                        except Exception:
+                            cnt_int = 0
+                        if cnt_int > best_count:
+                            best_data = candidate
+                            best_count = cnt_int
                     except Exception as region_error:
                         print(f"⚠️ Could not fetch from {region.upper()} store: {region_error}")
                         continue
-                
-                # If not found in regional stores, try without region
-                if not app_data:
+
+                # If we still didn't find data, try global lookup
+                if not best_data:
                     try:
                         resp = requests.get(
                             "https://itunes.apple.com/lookup",
                             params={"id": app_id},
-                            timeout=15
+                            timeout=15,
                         )
                         resp.raise_for_status()
                         data = resp.json()
                         results = data.get("results", [])
-                        
                         if results:
-                            app_data = results[0]
-                            print(f"✅ Found app: {app_data.get('trackName')} by {app_data.get('artistName')}")
+                            best_data = results[0]
                     except Exception as global_error:
                         print(f"⚠️ Could not fetch from global store: {global_error}")
-                
-                if app_data:
-                    target_apps.append({
-                        "trackId": int(app_id),
-                        "trackName": app_data.get("trackName"),
-                        "averageUserRating": app_data.get("averageUserRating"),
-                        "userRatingCount": app_data.get("userRatingCount"),
-                        "artistName": app_data.get("artistName")
-                    })
+
+                if best_data:
+                    # Normalize fields with fallbacks
+                    avg = best_data.get("averageUserRating") or best_data.get("averageUserRatingForCurrentVersion")
+                    cnt = best_data.get("userRatingCount") or best_data.get("userRatingCountForCurrentVersion")
+                    target_apps.append(
+                        {
+                            "trackId": int(app_id),
+                            "trackName": best_data.get("trackName"),
+                            "averageUserRating": avg,
+                            "userRatingCount": cnt,
+                            "artistName": best_data.get("artistName"),
+                        }
+                    )
                 else:
                     print(f"❌ No app found for ID: {app_id} in any region")
-                    
+
             except Exception as e:
                 print(f"❌ Error fetching app details for ID {app_id}: {e}")
                 continue

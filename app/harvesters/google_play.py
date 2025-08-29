@@ -9,8 +9,9 @@ from google_play_scraper import app as gp_app, reviews as gp_reviews, search, So
 from app.db.database import insert_mentions, upsert_app_profile
 from app.harvesters.app_mapping import app_mapping_service
 
-# India-only store targeting
-DEFAULT_COUNTRIES: List[str] = ["in"]
+# Prefer global coverage for details/review counts
+# Try multiple key stores to improve accuracy of ratings and review totals
+DEFAULT_COUNTRIES: List[str] = ["us", "ae", "in", "gb", "sa", "kw"]
 
 
 def _run_with_timeout(target, args: Tuple, kwargs: Dict, timeout_seconds: int):
@@ -135,6 +136,9 @@ def _fetch_reviews_limited(app_id: str, count: int = 200, timeout_seconds: int =
 
 
 def _fetch_app_details(app_id: str, timeout_seconds: int = 15) -> Optional[Dict]:
+    """Fetch app details and prefer the highest ratings_count across regions."""
+    best: Optional[Dict] = None
+    best_count: int = -1
     for country in DEFAULT_COUNTRIES:
         value, _ = _run_with_timeout(
             gp_app,
@@ -142,14 +146,24 @@ def _fetch_app_details(app_id: str, timeout_seconds: int = 15) -> Optional[Dict]
             kwargs={"lang": "en", "country": country},
             timeout_seconds=timeout_seconds,
         )
-        if value:
-            return {
-                "title": value.get("title"),
-                "rating": float(value.get("score", 0)) if value.get("score") else None,
-                "ratings_count": int(value.get("reviews", 0)) if value.get("reviews") else None,
-                "url": f"https://play.google.com/store/apps/details?id={app_id}",
-            }
-    return None
+        if not value:
+            continue
+        rating = float(value.get("score", 0)) if value.get("score") else None
+        ratings_count_raw = value.get("reviews", 0)
+        try:
+            ratings_count = int(ratings_count_raw or 0)
+        except Exception:
+            ratings_count = 0
+        details = {
+            "title": value.get("title"),
+            "rating": rating,
+            "ratings_count": ratings_count,
+            "url": f"https://play.google.com/store/apps/details?id={app_id}",
+        }
+        if ratings_count > best_count:
+            best = details
+            best_count = ratings_count
+    return best
 
 
 def harvest_google_play(connection, company_id: int, company_name: str, package_ids: Optional[List[str]] = None) -> int:

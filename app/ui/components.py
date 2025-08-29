@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 
-def render_metrics(df: pd.DataFrame, ratings_summary: Dict[str, Dict[str, float]], search_volume_summary: Optional[Dict[str, any]] = None) -> None:
+def render_metrics(df: pd.DataFrame, ratings_summary: Dict[str, Dict[str, float]], search_volume_summary: Optional[Dict[str, any]] = None, review_counts: Optional[Dict[str, int]] = None, store_totals: Optional[Dict[str, int]] = None) -> None:
     """Render key metrics in the dashboard."""
     col1, col2, col3, col4, col5 = st.columns(5)
     
@@ -25,20 +25,32 @@ def render_metrics(df: pd.DataFrame, ratings_summary: Dict[str, Dict[str, float]
             st.metric("Positive Sentiment", "0%")
     
     with col3:
-        # Google Play rating
+        # Google Play rating and counts
         gp_rating = ratings_summary.get("Google Play", {}).get("avg_rating", 0.0)
+        gp_collected = review_counts.get("Google Play", 0) if review_counts else 0
+        gp_total = store_totals.get("Google Play", 0) if store_totals else 0
+        def _short(n: int) -> str:
+            if n >= 1_000_000:
+                return f"{n/1_000_000:.1f}M"
+            if n >= 1_000:
+                return f"{n/1_000:.1f}k"
+            return f"{n}"
+        delta = f"{_short(gp_total)} total | {_short(gp_collected)} collected" if gp_total else (f"{_short(gp_collected)} collected" if gp_collected else None)
         if gp_rating > 0:
-            st.metric("Google Play Rating", f"{gp_rating}⭐")
+            st.metric("Google Play Rating", f"{gp_rating}⭐", delta)
         else:
-            st.metric("Google Play Rating", "N/A")
+            st.metric("Google Play Rating", "N/A", delta or "No data")
     
     with col4:
-        # Apple App Store rating
+        # Apple App Store rating and counts
         as_rating = ratings_summary.get("Apple App Store", {}).get("avg_rating", 0.0)
+        as_collected = review_counts.get("Apple App Store", 0) if review_counts else 0
+        as_total = store_totals.get("Apple App Store", 0) if store_totals else 0
+        delta = f"{_short(as_total)} total | {_short(as_collected)} collected" if as_total else (f"{_short(as_collected)} collected" if as_collected else None)
         if as_rating > 0:
-            st.metric("App Store Rating", f"{as_rating}⭐")
+            st.metric("App Store Rating", f"{as_rating}⭐", delta)
         else:
-            st.metric("App Store Rating", "N/A")
+            st.metric("App Store Rating", "N/A", delta or "No data")
     
     with col5:
         # Google Search Volume

@@ -11,12 +11,11 @@ _connection_cache: Optional[sqlite3.Connection] = None
 
 
 def get_connection() -> sqlite3.Connection:
+    """Get a SQLite connection using an in-memory database for reliability."""
     global _connection_cache
     if _connection_cache is None:
-        # Use in-memory database to avoid disk I/O errors
         _connection_cache = sqlite3.connect(":memory:", check_same_thread=False, timeout=30)
         _connection_cache.row_factory = sqlite3.Row
-        # Improve concurrency and robustness
         cursor = _connection_cache.cursor()
         try:
             cursor.execute("PRAGMA synchronous=NORMAL;")
@@ -197,6 +196,46 @@ def get_platform_rating_summary(connection: sqlite3.Connection, company_id: int)
             avg = float(cursor.fetchone()[0] or 0.0)
         summary[platform] = {"avg_rating": round(avg, 2), "ratings_count": total_count, "apps": apps}
     return summary
+
+
+def get_platform_store_review_totals(connection: sqlite3.Connection, company_id: int) -> Dict[str, int]:
+    """Return total ratings_count per platform from app_profiles for a company."""
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT platform, SUM(COALESCE(ratings_count, 0)) AS total_ratings
+        FROM app_profiles
+        WHERE company_id = ?
+        GROUP BY platform
+        """,
+        (company_id,),
+    )
+    totals: Dict[str, int] = {}
+    for row in cursor.fetchall():
+        platform = str(row[0])
+        total = int(row[1] or 0)
+        totals[platform] = total
+    return totals
+
+
+def get_platform_review_counts(connection: sqlite3.Connection, company_id: int) -> Dict[str, int]:
+    """Get total review counts from mentions table for each platform."""
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT source, COUNT(*) as review_count
+        FROM mentions
+        WHERE company_id = ? AND source IN ('Google Play', 'Apple App Store')
+        GROUP BY source
+        """,
+        (company_id,),
+    )
+    review_counts = {}
+    for row in cursor.fetchall():
+        platform = str(row[0])
+        count = int(row[1])
+        review_counts[platform] = count
+    return review_counts
 
 
 def fetch_mentions_dataframe(connection: sqlite3.Connection, company_id: int, source: Optional[str] = None):

@@ -19,6 +19,8 @@ from app.db.database import (
     get_connection,
     get_or_create_company,
     get_platform_rating_summary,
+    get_platform_store_review_totals,
+    get_platform_review_counts,
 )
 from app.harvesters.apple_app_store import harvest_apple_app_store
 from app.harvesters.google_play import harvest_google_play
@@ -276,6 +278,8 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
     # Fetch current data
     df = fetch_mentions_dataframe(connection, company_id)
     ratings_summary = get_platform_rating_summary(connection, company_id)
+    review_counts = get_platform_review_counts(connection, company_id)
+    store_totals = get_platform_store_review_totals(connection, company_id)
     
     st.info(f"📊 Dashboard for: **{selected_company.name}** | Found **{len(df)}** mentions")
     
@@ -303,9 +307,9 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
         with col2:
             st.metric("Positive Sentiment", "0%")
         with col3:
-            st.metric("Google Play Rating", "N/A")
+            st.metric("Google Play Rating", "N/A", "0 reviews")
         with col4:
-            st.metric("App Store Rating", "N/A")
+            st.metric("App Store Rating", "N/A", "0 reviews")
         with col5:
             st.metric("Avg Search Volume", "N/A")
     else:
@@ -321,8 +325,8 @@ if 'selected_company' in locals() and selected_company and 'company_id' in local
         else:
             df_display = df
         
-        # Render metrics (now includes search volume)
-        render_metrics(df_display, ratings_summary, search_volume_summary)
+        # Render metrics (now includes search volume, collected review counts, and store totals)
+        render_metrics(df_display, ratings_summary, search_volume_summary, review_counts, store_totals)
         
         # Render themes analysis
         render_themes(df_display)
