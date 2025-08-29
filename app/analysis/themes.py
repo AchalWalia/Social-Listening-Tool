@@ -10,7 +10,15 @@ from sklearn.feature_extraction.text import CountVectorizer
 def _extract_top_terms(texts: List[str], top_k: int = 10) -> List[Tuple[str, int]]:
     if not texts:
         return []
-    vectorizer = CountVectorizer(stop_words="english", ngram_range=(1, 2), min_df=2)
+    # Adapt min_df to dataset size to avoid empty themes when negatives are sparse
+    min_df = 1 if len(texts) < 20 else 2
+    vectorizer = CountVectorizer(
+        stop_words="english",
+        ngram_range=(1, 2),
+        min_df=min_df,
+        token_pattern=r"(?u)\b\w\w+\b",  # ignore single-letter tokens
+        lowercase=True,
+    )
     X = vectorizer.fit_transform(texts)
     counts = np.asarray(X.sum(axis=0)).ravel()
     terms = np.array(vectorizer.get_feature_names_out())
@@ -19,12 +27,21 @@ def _extract_top_terms(texts: List[str], top_k: int = 10) -> List[Tuple[str, int
     return top_terms
 
 
-def compute_themes(df: pd.DataFrame, positive_threshold: float = 0.9, negative_threshold: float = 0.1, top_k: int = 10):
+def compute_themes(
+    df: pd.DataFrame,
+    positive_threshold: float = 0.7,
+    negative_threshold: float = 0.7,
+    top_k: int = 10,
+):
     df = df.dropna(subset=["content"]) if not df.empty else df
+    # More inclusive thresholds by default to avoid empty themes on small datasets
     pos_texts = df[(df.get("sentiment_label") == "POSITIVE") & (df.get("sentiment_score", 0) >= positive_threshold)][
         "content"
     ].astype(str).tolist()
-    neg_texts = df[(df.get("sentiment_label") == "NEGATIVE") & (df.get("sentiment_score", 0) <= negative_threshold)][
+    # IMPORTANT: sentiment_score is the confidence for the predicted label.
+    # For negative predictions, scores are HIGH (close to 1.0). We therefore
+    # need ">= negative_threshold", not "<=", to capture confident negatives.
+    neg_texts = df[(df.get("sentiment_label") == "NEGATIVE") & (df.get("sentiment_score", 0) >= negative_threshold)][
         "content"
     ].astype(str).tolist()
 

@@ -257,6 +257,20 @@ if selected_company:
                 except Exception as e:
                     st.error(f"❌ Apple App Store error: {e}")
         
+        # After collection, label ALL unlabeled reviews (in batches) so themes can populate
+        try:
+            total_labeled = 0
+            with st.spinner("Running sentiment analysis on collected reviews..."):
+                while True:
+                    labeled = analyze_unlabeled_mentions(connection, company_id, batch_size=256, mode="fast")
+                    if labeled <= 0:
+                        break
+                    total_labeled += labeled
+            if total_labeled > 0:
+                st.info(f"🔎 Labeled {total_labeled} mentions for sentiment analysis")
+        except Exception as e:
+            st.warning(f"Sentiment pass skipped: {e}")
+
         # Summary
         collection_results['total'] = collection_results['google_play'] + collection_results['apple_app_store']
         
