@@ -62,11 +62,11 @@ def harvest_google_trends(company_name: str, timeframe: str = "today 12-m", geo:
         try:
             # If geo is India, fetch by states (REGION). Otherwise default to COUNTRY.
             resolution = 'REGION' if (geo or '').upper() == 'IN' else 'COUNTRY'
+            # interest_by_region doesn't take a geo param; it uses the geo set in build_payload
             regional_data = pytrends.interest_by_region(
                 resolution=resolution,
                 inc_low_vol=True,
                 inc_geo_code=False,
-                geo=geo or ''
             )
             if not regional_data.empty and company_name in regional_data.columns:
                 # Get top 10 regions
