@@ -1,0 +1,1 @@
+from .google_trends import harvest_google_trends 

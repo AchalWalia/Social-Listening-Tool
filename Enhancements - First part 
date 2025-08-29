@@ -1,0 +1,120 @@
+1.1 Feature Overview and Strategic Alignment
+
+The core of this enhancement is the replacement of the original "Company Onboarding & Validation" process, previously designated as Epic 1.1.1 The original workflow relied on a free-tier, third-party company enrichment API to translate a user-provided company name into a verifiable entity.1 The new module designates the company's official website URL, provided directly by the user, as the primary and canonical identifier for all subsequent analysis.
+This architectural evolution serves a critical strategic purpose. The original process was one of disambiguation, where the system would query an external API with a potentially ambiguous name (e.g., "GlowWidget") and present a list of possible matches for the user to select from.1 This introduced a potential point of failure; the external API's database could be incomplete, out of date, or simply not contain information on newer or smaller businesses, such as those run by the platform's target personas, Maria and David.1
+The new workflow is a process of verification. By starting with a unique and canonical identifier—the brand's official website URL—the system's first task is to confirm its validity. This approach places the responsibility of providing the correct "source of truth" with the user, who possesses the ultimate contextual knowledge of the brand they wish to analyze. This shift accomplishes two key strategic goals:
+Enhances the "Transparent & Traceable" Core Principle: The user knows with absolute certainty the origin point for all data collection. Every subsequent piece of data, from a social media link to an app store review, can be traced back to the single, user-verified URL, eliminating the "black box" nature of the previous third-party API lookup.1
+Improves "Pragmatic Extensibility": The platform's reliance on a specific free-tier company enrichment API is removed for this critical validation step. This reduces external dependencies, mitigating risks associated with API quota exhaustion, service changes, or discontinuation, thereby making the Aura platform more resilient and self-contained.1
+
+1.2 User Stories
+
+This epic, "Enhanced Company Onboarding via Website Verification," is defined by the following user stories, which capture the needs of Aura's primary personas, Maria the SMB Marketer and David the Indie App Developer.1
+User Story 1: Confident Brand Targeting
+As Maria, I want to input my company's website URL, glowwidget.com, as the starting point for an analysis, so that I can be 100% certain Aura is analyzing my specific brand and not a similarly named competitor.
+User Story 2: Automated Marketing Intelligence
+As David, after providing my app's landing page URL, I want Aura to automatically generate a summary of my value proposition and find my official Twitter and YouTube links, so I can save time on manual data entry and quickly see how my marketing copy is interpreted.
+User Story 3: Seamless App Store Integration
+As Maria, I want the tool to automatically find the App Store and Play Store links on my website and extract the correct app IDs, so that the app review analysis is triggered for the official "GlowWidget" companion app without me needing to look up the package names manually.
+User Story 4: Resilient Manual Override
+As David, if my new landing page doesn't yet have links to the app stores, I want a clear option to manually enter the App Store ID and Google Play package name for "TaskFlow", so I am not blocked from using the app review analysis features.
+
+1.3 Functional Requirements
+
+The implementation of this module must adhere to the following functional requirements:
+FR-1: URL Input & Validation
+FR-1.1: The system shall replace the initial "Enter a company name" text input field on the main page with a new field labeled "Enter your company's website URL".
+FR-1.2: Upon submission, the system shall perform a server-side validation by issuing an HTTP HEAD or GET request to the provided URL to confirm it is live and returns a success status code (e.g., 2xx).
+FR-1.3: If the URL is determined to be malformed, unreachable, or returns a client/server error status code (4xx/5xx), the system shall halt processing and display a user-friendly error message, such as "Could not reach this URL. Please check the address and try again."
+FR-2: Website Analysis for Value Proposition and Social Links
+FR-2.1: Upon successful URL validation, the system shall scrape the full HTML content of the provided URL.
+FR-2.2: The system shall parse the scraped HTML to extract all human-readable text content, sanitizing it by removing script, style, and other non-content tags.
+FR-2.3: The system shall process the sanitized text using a pre-trained, open-source NLP summarization model to generate a concise (2-4 sentence) summary of the brand's value proposition. This summary shall be displayed to the user.
+FR-2.4: The system shall parse all <a> (anchor) tags from the scraped HTML to identify and extract hyperlinks pointing to official brand profiles on Twitter/X.com, Instagram, and YouTube.
+FR-3: App Package Name and ID Identification
+FR-3.1: The system shall parse all extracted hyperlinks to identify those with href attributes pointing to apps.apple.com and play.google.com.
+FR-3.2: From any identified Apple App Store URL, the system shall extract the numerical App ID (e.g., the 472335316 from a URL containing /id472335316).2
+FR-3.3: From any identified Google Play Store URL, the system shall extract the string package name from the id= query parameter (e.g., com.google.android.apps.maps).3
+FR-4: Verified App Store Insights with Manual Override
+FR-4.1: The existing data harvester modules for Google Play (google-play-scraper) and the Apple App Store (app-store-web-scraper), as defined in the original PRD, shall be triggered only after a respective package name or app ID has been successfully extracted or manually provided.1
+FR-4.2: If the system fails to automatically extract either the App Store ID or the Google Play package name from the website, it must present a dedicated input form to the user.
+FR-4.3: This form shall be implemented using Streamlit's st.form functionality to batch user input.4 It will contain two distinct text input fields: one labeled "Apple App Store ID" and another labeled "Google Play Package Name".
+FR-4.4: The form must contain a single st.form_submit_button labeled "Analyze Apps". Clicking this button will trigger the relevant app store data harvesters using the manually provided identifiers.
+
+1.4 User and System Flow
+
+The interaction between the user and the Aura system follows a sequential, state-dependent flow. This new workflow creates a strict chain of dependencies: a valid URL is required for scraping, and successful scraping is required for automated link extraction. The system's behavior must be robust at each step, providing clear feedback to the user and offering a fallback path when automation fails.
+The process begins when the user enters a website URL and initiates the analysis. The system's first action is to validate this URL by making an HTTP request. If the URL is malformed or returns an error, the process halts immediately, and the user is shown a message like "URL is invalid or unreachable. Please check the address."
+Upon successful validation, the system proceeds to the website scraping stage. It downloads and parses the HTML content of the provided URL, extracting all text and hyperlinks. This step can also fail, for instance, if the website blocks the request or a timeout occurs. In such a case, the system again halts and informs the user with an error message, such as "Could not retrieve content from this website. It may be blocking automated analysis."
+If the scraping is successful, the system moves to content analysis and link parsing. The extracted text is fed to an NLP model to generate a value proposition summary, while the hyperlinks are scanned for social media and app store domains. This step is designed to be resilient; if no text or specific links are found, the process continues with empty results for those items rather than failing.
+The next step is a critical branching point based on the results of the link parsing. In the ideal "happy path," the system successfully finds and extracts the package name and ID from Google Play and Apple App Store links. This automatically triggers the respective app store data harvester modules, and the user is taken directly to the full analysis dashboard.
+However, if no app store links are found on the website, the system enters the manual override flow. It presents the user with the value proposition summary and any social media links it did find, but instead of the full dashboard, it displays a form. This form contains input fields for the "Apple App Store ID" and "Google Play Package Name," along with an "Analyze Apps" button.
+In this final step of the fallback path, the user can manually enter the correct app identifiers and submit the form. This action triggers the app store data harvesters using the manually provided input, leading to the display of the full dashboard. This ensures that even if automated detection fails, the user is not blocked from accessing the app analysis features.
+
+Section 2: Technical Approach
+
+This section details the recommended technical implementation for the new features, including library selection, a step-by-step guide, data flow, and error handling strategies. The entire approach adheres to the project's core constraint of using exclusively free and open-source technologies.
+
+2.1 Recommended Libraries and Justification
+
+The selection of libraries is guided by the "Pragmatic Extensibility" principle, balancing functionality, ease of use, and performance within the context of Aura's specific needs.1
+Website Scraping and Parsing: requests-html
+Description: requests-html is a Python library that combines the simplicity and power of the well-known requests library for making HTTP requests with robust HTML parsing capabilities.6 Crucially, it includes the ability to render JavaScript on a page by leveraging
+pyppeteer (a Python port of Puppeteer) in the background.8
+Justification: Modern marketing websites frequently use JavaScript to render key content, including social media or app store links. A simple library like BeautifulSoup paired with requests would fail to capture this dynamic content.10 Conversely, a full-featured browser automation framework like
+Playwright or Selenium would be overly complex and resource-intensive for the task of scraping a single homepage.12
+requests-html provides the ideal middle ground: it functions as a simple HTTP client for static sites but can be instructed to render JavaScript with a single method call (r.html.render()) when needed. This provides the necessary capability without introducing the steep learning curve or overhead of a full framework like Scrapy or Playwright, making it the most pragmatic choice for this feature.8
+Value Proposition Summarization: Hugging Face Transformers
+Description: The transformers library from Hugging Face is the de facto standard for accessing state-of-the-art, pre-trained NLP models.1 It provides a high-level
+pipeline API that simplifies complex tasks like summarization into a few lines of code.16
+Justification: This choice aligns perfectly with Aura's existing technology stack, which already utilizes the transformers library for sentiment analysis.1 For the summarization task, a lightweight yet effective model such as
+Falconsai/text_summarization (a fine-tuned T5-small model) is recommended.18 While larger models like
+facebook/bart-large-cnn are powerful, a smaller model offers a better balance of performance and resource consumption, which is critical for an application intended for wide accessibility.16 The inference speed of the model is a key non-functional requirement for ensuring a responsive user experience, making a smaller, optimized model a more suitable choice.
+URL and String Parsing: urllib.parse and re (Python Standard Library)
+Description: Python's built-in libraries for URL manipulation (urllib.parse) and regular expressions (re) are sufficient for extracting the required app identifiers.
+Justification: The Google Play package name is a standard URL query parameter, which can be reliably extracted using urllib.parse.urlparse and urllib.parse.parse_qs.3 The Apple App Store ID is embedded in the URL path, making a simple regular expression such as
+id(\d+) the most efficient method for its extraction.2 There is no need for external libraries for these well-defined parsing tasks.
+
+2.4 Error Handling
+
+Robust error handling is critical due to the fragile nature of web scraping and the sequential dependencies in the workflow.
+URL Validation Failure: A requests.RequestException during the initial requests.head call will be caught. The system will immediately terminate the process and display a clear error message to the user, preventing any further execution.
+Scraping Failure: The requests-html library can raise several exceptions. The implementation must specifically handle MaxRetries (indicating potential blocking) and generic exceptions. In either case, the scraping function should return an error message in its output dictionary. The main application logic will check for this error and, if present, halt the process and display the specific error to the user. This prevents the application from attempting to analyze empty or incomplete data.
+JavaScript Rendering Timeout: The r.html.render() method has a timeout parameter. If a page's scripts are too slow, this will raise an exception. This should be caught, and the system can gracefully fall back to parsing the static, non-rendered HTML, ensuring some data is still extracted. A warning can be displayed to the user: "Could not fully render JavaScript on the page; some dynamic content may be missing."
+No Links Found: This is not an error state but a common outcome. The parse_links function will simply return empty dictionaries. The application logic must handle this gracefully by displaying messages like "No social media links found" and triggering the manual override form for app store IDs, ensuring a continuous and helpful user journey.
+
+Section 3: Risks and Mitigation Plan
+
+The introduction of direct website scraping introduces new categories of risk that must be proactively managed to ensure the reliability and longevity of the Aura platform.
+
+3.1 Potential Risks
+
+Risk 1: Anti-Scraping Measures (High Likelihood, Medium Impact)
+Description: Websites may employ techniques to block automated access, such as IP-based rate limiting, CAPTCHA challenges, or browser fingerprinting that detects headless browsers used by libraries like pyppeteer (the backend for requests-html's rendering).14 This could cause the scraping step to fail intermittently or completely for certain websites.
+Impact: The entire analysis for a given URL would be blocked, rendering the tool unusable for that target.
+Risk 2: Website Structure Changes (High Likelihood, Low Impact)
+Description: The heuristics used to find social media and app store links rely on common HTML structures (e.g., links in a <footer> tag, specific href patterns). A website redesign could change these structures, causing the link extraction to fail even if the scraping itself succeeds.20
+Impact: The value proposition summary would still be generated, but social and app store links would not be found, forcing the user into the manual override flow and degrading the user experience.
+Risk 3: Poor Data Quality from Scraping (Medium Likelihood, Medium Impact)
+Description: The text extraction for the value proposition summary might pull in irrelevant content (e.g., cookie consent banners, navigation menus, legal disclaimers). This "noise" can lead to a nonsensical or misleading summary from the NLP model. Similarly, the link parser might incorrectly identify a link to a news article about Twitter as the official company profile.
+Impact: The tool would present inaccurate or low-quality information to the user, eroding trust in the platform's analytical capabilities.
+Risk 4: Performance Bottlenecks (Medium Likelihood, Medium Impact)
+Description: The r.html.render() call, which launches a headless browser, is significantly more resource-intensive and slower than a simple HTTP request.13 Processing a very large or script-heavy website could lead to long wait times for the user, creating a poor perceived performance. The NLP summarization model also adds computational overhead.
+Impact: Users may abandon the process if it takes too long, leading to a high bounce rate and negative perception of the tool's speed and efficiency.
+
+3.2 Mitigation Strategies
+
+Mitigation for Risk 1 (Anti-Scraping):
+Responsible Scraping Practices: The system must act as a "good citizen" of the web.21 All requests made by
+requests-html will be configured with a custom User-Agent header that identifies the tool (e.g., AuraBrandIntelligence/1.0; +https://github.com/user/aura). This transparency can prevent being blocked by simple filters.
+Graceful Fallback: The try...except block around the r.html.render() call is a critical mitigation. If the JavaScript rendering fails due to detection or timeout, the code will fall back to parsing the static HTML. This ensures that for many sites, some data can still be extracted.
+Clear User Feedback: If scraping is blocked entirely, the error message displayed to the user must be clear and actionable, explaining that the target site is likely preventing automated analysis.
+Mitigation for Risk 2 (Structure Changes):
+Prioritized Heuristics: The link parsing logic will not rely on a single method. As detailed in the "Scraping Heuristics & Selectors" table, it will use a prioritized list of CSS selectors and patterns. It will first search in high-probability areas like <header> and <footer> before scanning the entire document body. This makes the extraction more resilient to minor layout changes.
+Robust Manual Override: The manual override form is the ultimate mitigation for this risk. It ensures that even if the automated extraction fails completely, the user is never permanently blocked from using the core app analysis features. The user journey is designed to flow seamlessly into this manual state when necessary.
+Mitigation for Risk 3 (Poor Data Quality):
+Targeted Text Extraction: Instead of extracting text from the entire <body>, the scraper will prioritize content from more specific semantic tags like <main>, <article>, or elements with id="content". This helps to isolate the core content from boilerplate, improving the signal-to-noise ratio for the summarization model.
+Negative Filtering for Links: The social link extraction logic will include negative keywords to filter out irrelevant URLs. For example, it will discard Twitter links containing /intent/tweet or /share, as these are action links, not profile links.
+Mitigation for Risk 4 (Performance):
+Aggressive Caching: The heavy use of Streamlit's @st.cache_data and @st.cache_resource is the primary mitigation strategy.1 Scraping and NLP model inference for a given URL will only happen once within a defined time-to-live (TTL) period (e.g., one hour). Subsequent requests for the same URL will return the cached result instantly.
+Timeouts: All network operations, especially the render() call, will have aggressive timeouts (e.g., 15-20 seconds) to prevent the application from hanging indefinitely on a slow-loading website.
+Transparent UI Feedback: During the processing phase, the Streamlit UI will provide transparent feedback messages (e.g., "Validating URL...", "Scraping website content...", "Generating summary...") so the user understands what is happening and that the application has not frozen.1 This manages user expectations during unavoidable waits.
